@@ -6,6 +6,7 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Reportes de Asistencia')
     .addItem('Generar Reporte', 'reorganizarMarcaciones')
+    .addItem('Generar correos', 'generarCorreos') // --- NUEVO ÍTEM ---
     .addToUi();
 }
 
@@ -72,7 +73,7 @@ function reorganizarMarcaciones() {
       "marcacion2", "marcacion3", "T. Almuerzo", "marcacion4", "Día laborado"
     ];
 
-    hojaResultados.getRange(1, 1, 1, nuevosEncabezados.length).setValues([nuevosEncabezados]).setFontWeight("bold");
+    hojaResultados.getRange(1, 1, 1, nuevosEncabezados.length).setValues([nuevossEncabezados]).setFontWeight("bold");
 
     // --- Obtener datos de configuración ---
     const turnosEmpleados = obtenerTurnosEmpleados(ss);
@@ -247,6 +248,168 @@ function reorganizarMarcaciones() {
     ui.alert('Se produjo un error: ' + err.message + ' (Línea: ' + err.lineNumber + ')');
   }
 }
+
+
+/**
+ * --- NUEVA FUNCIÓN ---
+ * Genera borradores de correo electrónico para cada persona en la hoja "PERSONAL"
+ * con su resumen de asistencia y detalle de marcaciones.
+ */
+function generarCorreos() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    ui.alert("Iniciando la generación de borradores de correo...");
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const timeZone = Session.getScriptTimeZone();
+    let borradoresCreados = 0;
+
+    // 1. Verificar si las hojas de datos existen
+    const hojaResumen = ss.getSheetByName("Resumen de Asistencia");
+    const hojaMarcaciones = ss.getSheetByName("Marcaciones Reorganizadas");
+    const hojaPersonal = ss.getSheetByName("PERSONAL");
+
+    if (!hojaResumen || !hojaMarcaciones) {
+      ui.alert("No se encontraron las hojas 'Resumen de Asistencia' o 'Marcaciones Reorganizadas'.\nPor favor, ejecute 'Generar Reporte' primero.");
+      return;
+    }
+    if (!hojaPersonal) {
+      ui.alert("No se encontró la hoja 'PERSONAL'.");
+      return;
+    }
+
+    // 2. Leer todos los datos
+    const datosPersonal = hojaPersonal.getDataRange().getValues();
+    
+    const datosResumen = hojaResumen.getDataRange().getValues();
+    const encabezadoResumen = datosResumen[0];
+    const filasResumen = datosResumen.slice(1);
+
+    const datosMarcaciones = hojaMarcaciones.getDataRange().getValues();
+    const encabezadoMarcaciones = datosMarcaciones[0];
+    const filasMarcaciones = datosMarcaciones.slice(1);
+
+    // 3. Crear mapas para búsqueda rápida de datos
+    // Mapa para Resumen (Nombre -> Fila de datos)
+    const resumenMap = new Map();
+    for (const fila of filasResumen) {
+      const nombre = fila[0];
+      if (nombre) {
+        resumenMap.set(nombre, fila);
+      }
+    }
+
+    // Mapa para Marcaciones (Nombre -> Array de filas formateadas)
+    const marcacionesMap = new Map();
+    for (const fila of filasMarcaciones) {
+      const nombre = fila[0];
+      if (!nombre) continue;
+
+      // Formatear la fila para HTML
+      const filaFormateada = fila.map((celda, index) => {
+        if (celda instanceof Date) {
+          if (index === 1) { // Columna de Fecha (B)
+            return Utilities.formatDate(celda, timeZone, "dd/MM/yyyy");
+          } else { // Columnas de Hora
+            return Utilities.formatDate(celda, timeZone, "HH:mm:ss");
+          }
+        }
+        return celda; // Devolver strings (Feriado, etc.) y números como están
+      });
+
+      if (!marcacionesMap.has(nombre)) {
+        marcacionesMap.set(nombre, []);
+      }
+      marcacionesMap.get(nombre).push(filaFormateada);
+    }
+
+    // 4. Iterar sobre el personal y crear borradores
+    for (let i = 1; i < datosPersonal.length; i++) { // Empezar en 1 para saltar encabezado
+      const filaPersonal = datosPersonal[i];
+      const nombre = filaPersonal[1]; // Columna B
+      const correo = filaPersonal[5]; // Columna F
+
+      if (!nombre || !correo) {
+        console.warn(`Saltando fila ${i + 1} de PERSONAL: falta nombre o correo.`);
+        continue;
+      }
+
+      // Obtener los datos para esta persona
+      const filaResumen = resumenMap.get(nombre);
+      const filasMarcacionesPersona = marcacionesMap.get(nombre);
+
+      if (!filaResumen || !filasMarcacionesPersona) {
+        console.warn(`No se encontraron datos de reporte para ${nombre}. Saltando.`);
+        continue;
+      }
+
+      // 5. Construir el cuerpo del correo (HTML)
+      let htmlBody = `<p>Estimado ${nombre},</p>`;
+      htmlBody += "<p>Se remite sus marcaciones del mes para su conocimiento y justificación de las marcaciones de la hora del almuerzo en caso que sea necesario.</p>";
+      
+      htmlBody += "<h2>Resumen de Asistencia</h2>";
+      htmlBody += crearTablaHTML(encabezadoResumen, [filaResumen]); // Enviar la fila como un array de filas
+      
+      htmlBody += "<br><h2>Detalle de Marcaciones</h2>";
+      htmlBody += crearTablaHTML(encabezadoMarcaciones, filasMarcacionesPersona);
+
+      // 6. Crear el borrador
+      const asunto = "Reporte de Marcaciones Mensual";
+      // Cuerpo de texto plano como fallback
+      const cuerpoTextoPlano = `Estimado ${nombre},\nSe remite sus marcaciones del mes...\n(Por favor, vea el correo en un cliente que soporte HTML para ver las tablas).`;
+      
+      GmailApp.createDraft(correo, asunto, cuerpoTextoPlano, {
+        htmlBody: htmlBody
+      });
+      
+      borradoresCreados++;
+    }
+    
+    ui.alert(`¡Proceso completado!\nSe crearon ${borradoresCreados} borradores de correo.`);
+
+  } catch (err) {
+    console.error(err);
+    ui.alert('Se produjo un error al generar correos: ' + err.message + ' (Línea: ' + err.lineNumber + ')');
+  }
+}
+
+
+/**
+ * --- NUEVA FUNCIÓN HELPER ---
+ * Crea una tabla HTML a partir de un encabezado y un array de filas.
+ */
+function crearTablaHTML(encabezado, filasDatos) {
+  let tabla = '<table style="border: 1px solid black; border-collapse: collapse; width: 95%; font-family: Arial, sans-serif; font-size: 12px;">';
+  
+  // Encabezado
+  tabla += '<thead style="background-color: #f0f0f0;"><tr>';
+  for (const th of encabezado) {
+    tabla += `<th style="border: 1px solid #999; padding: 8px; text-align: left;">${th}</th>`;
+  }
+  tabla += '</tr></thead>';
+  
+  // Cuerpo
+  tabla += '<tbody>';
+  if (!filasDatos || filasDatos.length === 0) {
+    tabla += `<tr><td colspan="${encabezado.length}" style="border: 1px solid #999; padding: 8px; text-align: center;">No hay datos disponibles</td></tr>`;
+  } else {
+    for (const fila of filasDatos) {
+      tabla += '<tr>';
+      for (const td of fila) {
+        // Formatear "Falta marcación" en rojo
+        let estilo = "border: 1px solid #999; padding: 8px;";
+        if (td === "Falta marcación") {
+          estilo += " background-color: #ffcccc; color: #a60000;";
+        }
+        tabla += `<td style="${estilo}">${td}</td>`;
+      }
+      tabla += '</tr>';
+    }
+  }
+  
+  tabla += '</tbody></table>';
+  return tabla;
+}
+
 
 /**
  * Obtiene los turnos de empleados desde la hoja "Turnos"
