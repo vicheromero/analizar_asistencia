@@ -10,6 +10,21 @@ function onOpen() {
 }
 
 /**
+ * --- NUEVA FUNCIÓN ---
+ * Reemplaza texto en una hoja específica.
+ * Útil para corregir errores de codificación de caracteres (ej: Ã‘ por Ñ).
+ */
+function reemplazarTextoEnHoja(hoja, buscar, reemplazar) {
+  if (!hoja) return; // Si la hoja no existe, no hacer nada
+  try {
+    const textFinder = hoja.createTextFinder(buscar);
+    textFinder.replaceAllWith(reemplazar);
+  } catch (err) {
+    console.warn(`No se pudo reemplazar texto en la hoja "${hoja.getName()}". Error: ${err.message}`);
+  }
+}
+
+/**
  * Función principal para reorganizar las marcaciones de asistencia.
  * Lee desde la hoja "Marcaciones", procesa los datos y genera dos hojas nuevas:
  * "Marcaciones Reorganizadas" y "Resumen de Asistencia".
@@ -23,6 +38,16 @@ function reorganizarMarcaciones() {
     const startTime = new Date(); // Medir tiempo
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // --- MEJORA (Solicitada por el usuario) ---
+    // Corregir error de 'Ñ' en las hojas de origen *antes* de leer los datos.
+    const textoBuscar = "PEÃ‘AHERRERA SALCEDO FABRICIO MARCELO";
+    const textoReemplazar = "PEÑAHERRERA SALCEDO FABRICIO MARCELO";
+    
+    reemplazarTextoEnHoja(ss.getSheetByName("Marcaciones"), textoBuscar, textoReemplazar);
+    reemplazarTextoEnHoja(ss.getSheetByName("Turnos"), textoBuscar, textoReemplazar);
+    reemplazarTextoEnHoja(ss.getSheetByName("Ausentismo"), textoBuscar, textoReemplazar);
+    // --- Fin de la mejora ---
 
     const hojaOriginal = ss.getSheetByName("Marcaciones");
     if (!hojaOriginal) {
@@ -604,4 +629,3 @@ function crearResumenAsistencia(hojaResumen, nombresEmpleados) {
   
   hojaResumen.autoResizeColumns(1, 3);
 }
-
