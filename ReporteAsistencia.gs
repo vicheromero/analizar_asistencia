@@ -77,7 +77,7 @@ function reorganizarMarcaciones() {
 
     // --- Obtener datos de configuración ---
     const turnosEmpleados = obtenerTurnosEmpleados(ss);
-    const ausentismosEmpleados = obtenerAusentismosEmpleados(ss);
+    const ausentismosEmpleados = obtenerAusentismosEmpleados(ss); // <-- CAMBIO: Esta función ahora lee el tipo
     const feriados = obtenerFeriados(ss);
 
     // --- Paso 1: Detectar rango de fechas del mes ---
@@ -147,7 +147,10 @@ function reorganizarMarcaciones() {
 
         const esLaborable = esDiaLaborable(new Date(d), nombre, turnosEmpleados);
         const tieneMarcaciones = registro.ingreso || registro.salida || registro.inicio || registro.fin;
-        const estaEnAusentismo = verificarAusentismo(nombre, new Date(d), ausentismosEmpleados);
+        
+        // --- CAMBIO ---
+        // 'tipoAusentismo' ahora es un string (ej: "Comisión") o null.
+        const tipoAusentismo = verificarAusentismo(nombre, new Date(d), ausentismosEmpleados);
         const esFeriado = verificarFeriado(new Date(d), feriados);
 
         let ingreso, salida, inicioDescanso, finDescanso;
@@ -162,16 +165,23 @@ function reorganizarMarcaciones() {
           salida = registro.salida || "Horas extras";
           inicioDescanso = registro.inicio || "Horas extras";
           finDescanso = registro.fin || "Horas extras";
-        } else if (estaEnAusentismo && !tieneMarcaciones) {
-          ingreso = "Permiso";
-          salida = "Permiso";
-          inicioDescanso = "Permiso";
-          finDescanso = "Permiso";
-        } else if (estaEnAusentismo && tieneMarcaciones) {
-          ingreso = registro.ingreso || "Permiso";
-          salida = registro.salida || "Permiso";
-          inicioDescanso = registro.inicio || "Permiso";
-          finDescanso = registro.fin || "Permiso";
+        
+        // --- CAMBIO ---
+        // Si 'tipoAusentismo' no es null (es "truthy") y no hay marcaciones...
+        } else if (tipoAusentismo && !tieneMarcaciones) {
+          ingreso = tipoAusentismo; // ...usar el tipo (ej: "Comisión", "Permiso")
+          salida = tipoAusentismo;
+          inicioDescanso = tipoAusentismo;
+          finDescanso = tipoAusentismo;
+        
+        // --- CAMBIO ---
+        // Si 'tipoAusentismo' no es null y SÍ hay marcaciones...
+        } else if (tipoAusentismo && tieneMarcaciones) {
+          ingreso = registro.ingreso || tipoAusentismo; // ...usar el tipo como fallback
+          salida = registro.salida || tipoAusentismo;
+          inicioDescanso = registro.inicio || tipoAusentismo;
+          finDescanso = registro.fin || tipoAusentismo;
+        
         } else if (!esLaborable && !tieneMarcaciones) {
           ingreso = "Día de descanso";
           salida = "Día de descanso";
@@ -288,6 +298,29 @@ function generarCorreos() {
     const encabezadoMarcaciones = datosMarcaciones[0];
     const filasMarcaciones = datosMarcaciones.slice(1);
 
+    // --- NUEVO CÓDIGO para obtener el mes (MODIFICADO A ESPAÑOL) ---
+    let nombreMes = "";
+    if (filasMarcaciones.length > 0 && filasMarcaciones[0][1] instanceof Date) {
+        const primeraFecha = filasMarcaciones[0][1]; // Columna B ("Fecha") de la primera fila de datos
+        
+        // --- CAMBIO A ESPAÑOL ---
+        // Array con los nombres de los meses en español
+        const mesesEnEspanol = [
+          "enero", "febrero", "marzo", "abril", "mayo", "junio",
+          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+        ];
+        
+        const mesNumero = primeraFecha.getMonth(); // Devuelve 0-11
+        const anio = primeraFecha.getFullYear();
+        
+        const nombreMesEspanol = mesesEnEspanol[mesNumero];
+        
+        // Construir el formato "Noviembre de 2025"
+        nombreMes = nombreMesEspanol.charAt(0).toUpperCase() + nombreMesEspanol.slice(1) + " de " + anio;
+        // --- FIN CAMBIO A ESPAÑOL ---
+    }
+    // --- FIN DE NUEVO CÓDIGO ---
+
     // 3. Crear mapas para búsqueda rápida de datos
     // Mapa para Resumen (Nombre -> Fila de datos)
     const resumenMap = new Map();
@@ -344,7 +377,7 @@ function generarCorreos() {
 
       // 5. Construir el cuerpo del correo (HTML)
       let htmlBody = `<p>Estimado ${nombre},</p>`;
-      htmlBody += "<p>Se remite sus marcaciones del mes para su conocimiento y presentación de las marcaciones de la hora del almuerzo en caso que sea necesario.</p>";
+      htmlBody += "<p>Se remiten sus marcaciones del mes para su conocimiento, en caso de no tener completas las marcaciones de la hora del almuerzo presentar las marcaciones manuales.</p>";
       
       htmlBody += "<h2>Resumen de Asistencia</h2>";
       htmlBody += crearTablaHTML(encabezadoResumen, [filaResumen]); // Enviar la fila como un array de filas
@@ -353,7 +386,10 @@ function generarCorreos() {
       htmlBody += crearTablaHTML(encabezadoMarcaciones, filasMarcacionesPersona);
 
       // 6. Crear el borrador
-      const asunto = "Reporte de Marcaciones Mensual";
+      // --- LÍNEA MODIFICADA ---
+      // Añadir el mes al asunto, si se encontró
+      const asunto = "Reporte de Marcaciones Mensual" + (nombreMes ? ` ${nombreMes}` : "");
+      
       // Cuerpo de texto plano como fallback
       const cuerpoTextoPlano = `Estimado ${nombre},\nSe remite sus marcaciones del mes...\n(Por favor, vea el correo en un cliente que soporte HTML para ver las tablas).`;
       
@@ -488,6 +524,9 @@ function verificarFeriado(fecha, feriados) {
 
 /**
  * Obtiene los ausentismos de empleados desde la hoja "Ausentismo"
+ * // --- CAMBIO ---
+ * Ahora lee el tipo de absentismo desde la Columna F (índice 5)
+ * y lo convierte a "Permiso" si no es "Comisión" o "Compensación".
  */
 function obtenerAusentismosEmpleados(ss) {
   const ausentismos = [];
@@ -505,6 +544,10 @@ function obtenerAusentismosEmpleados(ss) {
     const indiceFin = encabezadosAusentismo.indexOf("Fin de validez");
     const indiceDias = encabezadosAusentismo.indexOf("Días de absentismo");
     
+    // --- CAMBIO ---
+    // Se elimina la búsqueda del índice "Tipo de Absentismo".
+    // const indiceTipo = encabezadosAusentismo.indexOf("Tipo de Absentismo");
+    
     if (indiceNombre === -1 || indiceInicio === -1 || indiceFin === -1 || indiceDias === -1) {
       console.warn("No se encontraron todas las columnas necesarias en la hoja Ausentismo");
       return ausentismos;
@@ -518,12 +561,25 @@ function obtenerAusentismosEmpleados(ss) {
       // Manejar números con comas
       const diasAbsentismo = parseFloat(String(fila[indiceDias]).replace(',', '.')) || 0; 
       
+      // --- CAMBIO ---
+      // Obtener el tipo directamente de la Columna F (índice 5).
+      // Si es "Comisión" o "Compensación", se mantiene.
+      // Si está vacío o es cualquier otro texto, se cambia por "Permiso".
+      let tipo;
+      const valorCeldaF = fila[5];
+      if (valorCeldaF === "Comisión" || valorCeldaF === "Compensación") {
+        tipo = valorCeldaF;
+      } else {
+        tipo = "Permiso";
+      }
+      
       if (nombre && diasAbsentismo > 0 && fechaInicio instanceof Date && fechaFin instanceof Date) {
         ausentismos.push({
           nombre: nombre,
           fechaInicio: new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), fechaInicio.getDate()),
           fechaFin: new Date(fechaFin.getFullYear(), fechaFin.getMonth(), fechaFin.getDate()),
-          dias: diasAbsentismo
+          dias: diasAbsentismo,
+          tipo: tipo // <-- CAMBIO: Guardar el tipo
         });
       }
     }
@@ -535,16 +591,18 @@ function obtenerAusentismosEmpleados(ss) {
 
 /**
  * Verifica si un empleado está en período de ausentismo en una fecha específica
+ * // --- CAMBIO ---
+ * Ahora devuelve el string del "tipo" de ausentismo (ej: "Comisión") o null.
  */
 function verificarAusentismo(nombreEmpleado, fecha, ausentismosEmpleados) {
   for (const ausentismo of ausentismosEmpleados) {
     if (ausentismo.nombre === nombreEmpleado) {
       if (fecha >= ausentismo.fechaInicio && fecha <= ausentismo.fechaFin) {
-        return true;
+        return ausentismo.tipo; // <-- CAMBIO: Devuelve el tipo (ej: "Comisión", "Permiso")
       }
     }
   }
-  return false;
+  return null; // <-- CAMBIO: Devuelve null si no hay coincidencia
 }
 
 /**
@@ -588,14 +646,17 @@ function aplicarFormulasConTurnos(hojaResultados, filas, turnosEmpleados, feriad
     const filaSheet = i + 2; // Fila real en la hoja (para las fórmulas A1)
     
     // Fórmulas de Atraso (Col D)
-    formulasAtraso.push([
-      `=IF(OR(C${filaSheet}="",C${filaSheet}="Falta marcación",C${filaSheet}="Día de descanso",C${filaSheet}="Horas extras",C${filaSheet}="Permiso",C${filaSheet}="Feriado"),"",IF(C${filaSheet}>TIME(8,0,59),C${filaSheet}-TIME(8,0,0),""))`
-    ]);
+    // --- CAMBIO ---
+    // Añadida la lógica para no calcular atraso en "Comisión" o "Compensación"
+    const formulaAtraso = `=IF(OR(C${filaSheet}="", ISNUMBER(SEARCH("Falta marcación", C${filaSheet})), ISNUMBER(SEARCH("Día de descanso", C${filaSheet})), ISNUMBER(SEARCH("Horas extras", C${filaSheet})), ISNUMBER(SEARCH("Permiso", C${filaSheet})), ISNUMBER(SEARCH("Feriado", C${filaSheet})), ISNUMBER(SEARCH("Comisión", C${filaSheet})), ISNUMBER(SEARCH("Compensación", C${filaSheet}))), "", IF(C${filaSheet}>TIME(8,0,59), C${filaSheet}-TIME(8,0,0), ""))`;
+    formulasAtraso.push([formulaAtraso]);
     
     // Fórmulas de Tiempo de Almuerzo (Col G)
-    formulasAlmuerzo.push([
-      `=IF(OR(E${filaSheet}="Falta marcación",E${filaSheet}="Horas extras",F${filaSheet}="Falta marcación",F${filaSheet}="Horas extras"),"Falta marcación",IF(OR(E${filaSheet}="Día de descanso",F${filaSheet}="Día de descanso",E${filaSheet}="Permiso",F${filaSheet}="Permiso",E${filaSheet}="Feriado",F${filaSheet}="Feriado"),"",IF(AND(E${filaSheet}<>"",E${filaSheet}<>"Falta marcación",F${filaSheet}<>"",F${filaSheet}<>"Falta marcación"),F${filaSheet}-E${filaSheet},"Falta marcación")))`
-    ]);
+    // --- CAMBIO ---
+    // Añadida la lógica para no calcular almuerzo en "Comisión" o "Compensación"
+    const formulaAlmuerzo = `=IF(OR(ISNUMBER(SEARCH("Falta marcación", E${filaSheet})), ISNUMBER(SEARCH("Horas extras", E${filaSheet})), ISNUMBER(SEARCH("Falta marcación", F${filaSheet})), ISNUMBER(SEARCH("Horas extras", F${filaSheet}))), "Falta marcación", IF(OR(ISNUMBER(SEARCH("Día de descanso", E${filaSheet})), ISNUMBER(SEARCH("Día de descanso", F${filaSheet})), ISNUMBER(SEARCH("Permiso", E${filaSheet})), ISNUMBER(SEARCH("Permiso", F${filaSheet})), ISNUMBER(SEARCH("Feriado", E${filaSheet})), ISNUMBER(SEARCH("Feriado", F${filaSheet})), ISNUMBER(SEARCH("Comisión", E${filaSheet})), ISNUMBER(SEARCH("Comisión", F${filaSheet})), ISNUMBER(SEARCH("Compensación", E${filaSheet})), ISNUMBER(SEARCH("Compensación", F${filaSheet}))), "", IF(AND(E${filaSheet}<>"", NOT(ISNUMBER(SEARCH("Falta marcación", E${filaSheet}))), F${filaSheet}<>"", NOT(ISNUMBER(SEARCH("Falta marcación", F${filaSheet})))), F${filaSheet}-E${filaSheet}, "Falta marcación")))`;
+    formulasAlmuerzo.push([formulaAlmuerzo]);
+
 
     // Lógica de Día Laborado (Col I)
     const nombre = data[i][0]; // Col A
@@ -608,9 +669,10 @@ function aplicarFormulasConTurnos(hojaResultados, filas, turnosEmpleados, feriad
       if (esFeriado) {
         formulasDiaLaborado.push([0]);
       } else if (esLaborable) {
-        formulasDiaLaborado.push([
-          `=IF(AND(C${filaSheet}<>"",C${filaSheet}<>"Falta marcación",C${filaSheet}<>"Día de descanso",C${filaSheet}<>"Horas extras",C${filaSheet}<>"Permiso",C${filaSheet}<>"Feriado",C${filaSheet}<>"Compensación",H${filaSheet}<>"",H${filaSheet}<>"Falta marcación",H${filaSheet}<>"Día de descanso",H${filaSheet}<>"Horas extras",H${filaSheet}<>"Permiso",H${filaSheet}<>"Feriado",H${filaSheet}<>"Compensación"),1,0)`
-        ]);
+        // --- CAMBIO ---
+        // Añadida la lógica para no contar día laborado en "Comisión" o "Compensación"
+        const formulaDia = `=IF(OR(ISNUMBER(SEARCH("Comisión", C${filaSheet})), ISNUMBER(SEARCH("Compensación", C${filaSheet})), ISNUMBER(SEARCH("Permiso", C${filaSheet}))), 0, IF(AND(C${filaSheet}<>"", C${filaSheet}<>"Falta marcación", C${filaSheet}<>"Día de descanso", C${filaSheet}<>"Horas extras", C${filaSheet}<>"Feriado", H${filaSheet}<>"", H${filaSheet}<>"Falta marcación", H${filaSheet}<>"Día de descanso", H${filaSheet}<>"Horas extras", H${filaSheet}<>"Feriado"), 1, 0))`;
+        formulasDiaLaborado.push([formulaDia]);
       } else {
         formulasDiaLaborado.push([0]);
       }
@@ -628,12 +690,15 @@ function aplicarFormulasConTurnos(hojaResultados, filas, turnosEmpleados, feriad
 
 /**
  * Aplica el formato condicional a la hoja de resultados.
+ * // --- CAMBIO ---
+ * Añadidas las reglas para "Compensación" y "Comisión"
  */
 function aplicarFormatoCondicional(hojaResultados, filas, turnosEmpleados, feriados) {
   let reglas = [];
- // Formato para atrasos (Col D)
+
+  // Formato para atrasos (Col D)
   const rangoAtrasos = hojaResultados.getRange(2, 4, filas, 1);
- reglas.push(
+  reglas.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberGreaterThan(0.00694) // > 10 min
       .setBackground("#FF0000")
@@ -650,49 +715,54 @@ function aplicarFormatoCondicional(hojaResultados, filas, turnosEmpleados, feria
       .setRanges([rangoAtrasos])
       .build()
   );
- // Formato para tiempo de almuerzo (Col G)
+
+  // Formato para tiempo de almuerzo (Col G)
   const rangoAlmuerzo = hojaResultados.getRange(2, 7, filas, 1);
- reglas.push(
+  reglas.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberGreaterThan(0.041667) // > 1 hora
       .setBackground("#FFFF00")
       .setRanges([rangoAlmuerzo])
       .build()
   );
- // Rangos para marcaciones (C, E, F, H)
+
+  // Rangos para marcaciones (C, E, F, H)
   const rangoMarcacion1 = hojaResultados.getRange(2, 3, filas, 1);
- const rangoMarcacion2 = hojaResultados.getRange(2, 5, filas, 1);
+  const rangoMarcacion2 = hojaResultados.getRange(2, 5, filas, 1);
   const rangoMarcacion3 = hojaResultados.getRange(2, 6, filas, 1);
- const rangoMarcacion4 = hojaResultados.getRange(2, 8, filas, 1);
+  const rangoMarcacion4 = hojaResultados.getRange(2, 8, filas, 1);
   const rangosMarcaciones = [rangoMarcacion1, rangoMarcacion2, rangoMarcacion3, rangoMarcacion4];
- reglas.push(
+
+  reglas.push(
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Falta marcación").setBackground("#FF0000").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Día de descanso").setBackground("#FFA500").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Horas extras").setBackground("#006400").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Permiso").setBackground("#0066CC").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Feriado").setBackground("#800080").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build(),
     
-    // --- NUEVAS REGLAS AÑADIDAS ---
+    // --- NUEVAS REGLAS AÑADIDAS (de tu solicitud anterior) ---
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Compensación").setBackground("#FF00FF").setRanges(rangosMarcaciones).build(), // Color Magenta
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Comisión").setBackground("#00FFFF").setRanges(rangosMarcaciones).build()      // Color Cian
     // --- FIN DE NUEVAS REGLAS ---
   );
- // Formato para días laborados = 0 (Col I)
+
+  // Formato para días laborados = 0 (Col I)
   const rangoDiaLaborado = hojaResultados.getRange(2, 9, filas, 1);
- reglas.push(
+  reglas.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberEqualTo(0)
       .setBackground("#D3D3D3")
       .setRanges([rangoDiaLaborado])
       .build()
   );
- // Aplicar reglas de formato condicional
+
+  // Aplicar reglas de formato condicional
   hojaResultados.setConditionalFormatRules(reglas);
 
   // --- OPTIMIZACIÓN ---
   // Aplicar formato de Horas Extras (que no es condicional) en lote
   aplicarFormatoHorasExtras(hojaResultados, filas, turnosEmpleados, feriados);
- }
+}
 
 /**
  * --- OPTIMIZADO ---
