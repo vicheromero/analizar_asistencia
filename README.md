@@ -79,10 +79,14 @@ Para que el script funcione correctamente, tu hoja de cálculo de Google **DEBE*
 ## **Vistas Previas**
 
 **Hoja de entrada Marcaciones (Ejemplo):**
+
 ![image](https://github.com/user-attachments/assets/584dc460-9793-4211-8bdf-3bb1180ab614)
 
 **Hoja de salida Marcaciones Reorganizadas (Ejemplo con formato):**
-![image](https://github.com/user-attachments/assets/5c880be3-26b8-4e54-b78b-2145188b85dd)
+
+<img width="1291" height="423" alt="image" src="https://github.com/user-attachments/assets/e985052e-98d5-48fb-b29f-ec434966eb04" />
+
 
 **Hoja de salida Resumen de Asistencia (Ejemplo):**
+
 ![image](https://github.com/user-attachments/assets/4b3e0ea3-a095-405d-bf47-e070580019c1)
