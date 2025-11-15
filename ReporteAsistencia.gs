@@ -73,7 +73,7 @@ function reorganizarMarcaciones() {
       "marcacion2", "marcacion3", "T. Almuerzo", "marcacion4", "Día laborado"
     ];
 
-    hojaResultados.getRange(1, 1, 1, nuevosEncabezados.length).setValues([nuevossEncabezados]).setFontWeight("bold");
+    hojaResultados.getRange(1, 1, 1, nuevosEncabezados.length).setValues([nuevosEncabezados]).setFontWeight("bold");
 
     // --- Obtener datos de configuración ---
     const turnosEmpleados = obtenerTurnosEmpleados(ss);
@@ -344,7 +344,7 @@ function generarCorreos() {
 
       // 5. Construir el cuerpo del correo (HTML)
       let htmlBody = `<p>Estimado ${nombre},</p>`;
-      htmlBody += "<p>Se remite sus marcaciones del mes para su conocimiento y justificación de las marcaciones de la hora del almuerzo en caso que sea necesario.</p>";
+      htmlBody += "<p>Se remite sus marcaciones del mes para su conocimiento y presentación de las marcaciones de la hora del almuerzo en caso que sea necesario.</p>";
       
       htmlBody += "<h2>Resumen de Asistencia</h2>";
       htmlBody += crearTablaHTML(encabezadoResumen, [filaResumen]); // Enviar la fila como un array de filas
@@ -609,7 +609,7 @@ function aplicarFormulasConTurnos(hojaResultados, filas, turnosEmpleados, feriad
         formulasDiaLaborado.push([0]);
       } else if (esLaborable) {
         formulasDiaLaborado.push([
-          `=IF(AND(C${filaSheet}<>"",C${filaSheet}<>"Falta marcación",C${filaSheet}<>"Día de descanso",C${filaSheet}<>"Horas extras",C${filaSheet}<>"Permiso",C${filaSheet}<>"Feriado",H${filaSheet}<>"",H${filaSheet}<>"Falta marcación",H${filaSheet}<>"Día de descanso",H${filaSheet}<>"Horas extras",H${filaSheet}<>"Permiso",H${filaSheet}<>"Feriado"),1,0)`
+          `=IF(AND(C${filaSheet}<>"",C${filaSheet}<>"Falta marcación",C${filaSheet}<>"Día de descanso",C${filaSheet}<>"Horas extras",C${filaSheet}<>"Permiso",C${filaSheet}<>"Feriado",C${filaSheet}<>"Compensación",H${filaSheet}<>"",H${filaSheet}<>"Falta marcación",H${filaSheet}<>"Día de descanso",H${filaSheet}<>"Horas extras",H${filaSheet}<>"Permiso",H${filaSheet}<>"Feriado",H${filaSheet}<>"Compensación"),1,0)`
         ]);
       } else {
         formulasDiaLaborado.push([0]);
@@ -631,10 +631,9 @@ function aplicarFormulasConTurnos(hojaResultados, filas, turnosEmpleados, feriad
  */
 function aplicarFormatoCondicional(hojaResultados, filas, turnosEmpleados, feriados) {
   let reglas = [];
-
-  // Formato para atrasos (Col D)
+ // Formato para atrasos (Col D)
   const rangoAtrasos = hojaResultados.getRange(2, 4, filas, 1);
-  reglas.push(
+ reglas.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberGreaterThan(0.00694) // > 10 min
       .setBackground("#FF0000")
@@ -651,49 +650,49 @@ function aplicarFormatoCondicional(hojaResultados, filas, turnosEmpleados, feria
       .setRanges([rangoAtrasos])
       .build()
   );
-
-  // Formato para tiempo de almuerzo (Col G)
+ // Formato para tiempo de almuerzo (Col G)
   const rangoAlmuerzo = hojaResultados.getRange(2, 7, filas, 1);
-  reglas.push(
+ reglas.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberGreaterThan(0.041667) // > 1 hora
       .setBackground("#FFFF00")
       .setRanges([rangoAlmuerzo])
       .build()
   );
-
-  // Rangos para marcaciones (C, E, F, H)
+ // Rangos para marcaciones (C, E, F, H)
   const rangoMarcacion1 = hojaResultados.getRange(2, 3, filas, 1);
-  const rangoMarcacion2 = hojaResultados.getRange(2, 5, filas, 1);
+ const rangoMarcacion2 = hojaResultados.getRange(2, 5, filas, 1);
   const rangoMarcacion3 = hojaResultados.getRange(2, 6, filas, 1);
-  const rangoMarcacion4 = hojaResultados.getRange(2, 8, filas, 1);
+ const rangoMarcacion4 = hojaResultados.getRange(2, 8, filas, 1);
   const rangosMarcaciones = [rangoMarcacion1, rangoMarcacion2, rangoMarcacion3, rangoMarcacion4];
-
-  reglas.push(
+ reglas.push(
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Falta marcación").setBackground("#FF0000").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Día de descanso").setBackground("#FFA500").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Horas extras").setBackground("#006400").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Permiso").setBackground("#0066CC").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build(),
-    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Feriado").setBackground("#800080").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build()
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Feriado").setBackground("#800080").setFontColor("#FFFFFF").setRanges(rangosMarcaciones).build(),
+    
+    // --- NUEVAS REGLAS AÑADIDAS ---
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Compensación").setBackground("#FF00FF").setRanges(rangosMarcaciones).build(), // Color Magenta
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Comisión").setBackground("#00FFFF").setRanges(rangosMarcaciones).build()      // Color Cian
+    // --- FIN DE NUEVAS REGLAS ---
   );
-
-  // Formato para días laborados = 0 (Col I)
+ // Formato para días laborados = 0 (Col I)
   const rangoDiaLaborado = hojaResultados.getRange(2, 9, filas, 1);
-  reglas.push(
+ reglas.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberEqualTo(0)
       .setBackground("#D3D3D3")
       .setRanges([rangoDiaLaborado])
       .build()
   );
-
-  // Aplicar reglas de formato condicional
+ // Aplicar reglas de formato condicional
   hojaResultados.setConditionalFormatRules(reglas);
 
   // --- OPTIMIZACIÓN ---
   // Aplicar formato de Horas Extras (que no es condicional) en lote
   aplicarFormatoHorasExtras(hojaResultados, filas, turnosEmpleados, feriados);
-}
+ }
 
 /**
  * --- OPTIMIZADO ---
